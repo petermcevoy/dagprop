@@ -135,93 +135,48 @@ const DAG = struct {
         return handle;
     }
 
-    pub fn resolveNode(self: *Self, node_handle: NodeHandle) !void {
+    const ResolveMode = enum { Forward, Backward };
+
+    pub fn resolveNode(self: *Self, node_handle: NodeHandle, comptime mode: ResolveMode) !void {
+        // TODO: Can perhaps wreplace this with a call to ensureTopologicalOrder,
+        // that will resort the Nodes and how they are stored in mem?
         var sorted_nodes = try self.toposort_dfs(node_handle);
         defer sorted_nodes.deinit();
 
-        var n = sorted_nodes.items.len;
-        while (n > 0) : (n -= 1) {
-            var i = n - 1;
-            var current_node_handle = sorted_nodes.items[i];
-            var current_node = &self.nodes.items[current_node_handle];
-            std.debug.print("EVALUATING {s}, {?}\n", .{ current_node.name, current_node });
+        switch (mode) {
+            inline .Forward => {
+                std.log.info("Performing forward pass in DAG", .{});
 
-            // Limit to 2 incoming edges to a given node.
-            var in_a: ?*const Node = null;
-            var in_b: ?*const Node = null;
-            for (self.edges.items) |edge| {
-                if (edge.to != current_node_handle) continue;
-                const incomming_node = &self.nodes.items[edge.from];
-                std.debug.print("Incoming: {s} -> {s}\n", .{ incomming_node.name, current_node.name });
-                if (in_a == null) {
-                    in_a = incomming_node;
-                } else if (in_b == null) {
-                    in_b = incomming_node;
-                } else {
-                    std.debug.print("One too many incoming nodes to {s} -> {s}: {?}: {?}", .{ incomming_node.name, current_node.name, incomming_node, current_node });
-                    assert(false); // We only allow 2 incoming edges to a node.
-                }
-            }
-
-            // TODO: This check should not be performed for unary ops.
-            if (current_node.op != .Constant and current_node.op != .TanH and (in_a == null or in_b == null)) {
-                std.debug.print("Not enough inputs to Op node {s}: {?}", .{ current_node.name, current_node });
-                assert(false); // Not enough inputs to op node.
-            }
-
-            switch (current_node.op) {
-                .Constant => {
-                    // do nothing, value should already be set.
-                },
-                .Addition => {
-                    OpAddition.forward(current_node, in_a.?, in_b.?);
-                },
-                .Subtraction => {
-                    OpSubtraction.forward(current_node, in_a.?, in_b.?);
-                },
-                .Multiplication => {
-                    OpMultiplication.forward(current_node, in_a.?, in_b.?);
-                },
-                .TanH => {
-                    OpTanH.forward(current_node, in_a.?);
-                },
-            }
-            std.debug.print("DONE EVALUATING {s}, {?}\n", .{ current_node.name, current_node });
+                // Traverse nodes in reverse-topological order for the forward pass.
+                std.mem.reverse(usize, sorted_nodes.items);
+            },
+            inline else => {
+                std.log.info("Performing backward pass in DAG", .{});
+                self.nodes.items[node_handle].grad = 1.0;
+            },
         }
 
-        std.debug.print("Sorted nodes:\n", .{});
         for (sorted_nodes.items) |current_node_handle| {
-            var node = self.nodes.items[current_node_handle];
-            std.debug.print("{?}\n", .{node});
-        }
-    }
-    pub fn resolveNodeBackward(self: *Self, node_handle: NodeHandle) !void {
-        var sorted_nodes = try self.toposort_dfs(node_handle);
-        defer sorted_nodes.deinit();
-
-        // Set initial grad
-        // TODO, reset all grads in graph.
-        self.nodes.items[node_handle].grad = 1.0;
-
-        var i: usize = 0;
-        while (i < sorted_nodes.items.len) : (i += 1) {
-            var current_node_handle = sorted_nodes.items[i];
             var current_node = &self.nodes.items[current_node_handle];
-            std.debug.print("BACKPROPPING {s}, {?}\n", .{ current_node.name, current_node });
+            std.log.debug("EVALUATING {s}, {?}", .{ current_node.name, current_node });
+
+            if (current_node.op == .Constant) continue;
 
             // Limit to 2 incoming edges to a given node.
+            // TODO: Quicker lookup for incoming nodes?
+            // Pre-processing step to prepare a lookup table?
             var in_a: ?*Node = null;
             var in_b: ?*Node = null;
             for (self.edges.items) |edge| {
                 if (edge.to != current_node_handle) continue;
                 const incomming_node = &self.nodes.items[edge.from];
-                std.debug.print("Incoming: {s} -> {s}\n", .{ incomming_node.name, current_node.name });
+                std.log.debug("Incoming: {s} -> {s}", .{ incomming_node.name, current_node.name });
                 if (in_a == null) {
                     in_a = incomming_node;
                 } else if (in_b == null) {
                     in_b = incomming_node;
                 } else {
-                    std.debug.print("One too many incoming nodes to {s} -> {s}: {?}: {?}", .{ incomming_node.name, current_node.name, incomming_node, current_node });
+                    std.log.err("One too many incoming nodes to {s} -> {s}: {?}: {?}", .{ incomming_node.name, current_node.name, incomming_node, current_node });
                     assert(false); // We only allow 2 incoming edges to a node.
                 }
             }
@@ -232,23 +187,49 @@ const DAG = struct {
                 assert(false); // Not enough inputs to op node.
             }
 
-            switch (current_node.op) {
-                .Constant => {
-                    // do nothing, value should already be set.
+            // TODO: Clean this up.
+            switch (mode) {
+                .Forward => {
+                    switch (current_node.op) {
+                        .Constant => {
+                            // do nothing, value should already be set.
+                        },
+                        .Addition => {
+                            OpAddition.forward(current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
+                        },
+                        .Subtraction => {
+                            OpSubtraction.forward(current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
+                        },
+                        .Multiplication => {
+                            OpMultiplication.forward(current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
+                        },
+                        .TanH => {
+                            OpTanH.forward(current_node, @ptrCast(*const Node, in_a.?));
+                        },
+                    }
                 },
-                .Addition => {
-                    OpAddition.backward(current_node, in_a.?, in_b.?);
-                },
-                .Subtraction => {
-                    OpSubtraction.backward(current_node, in_a.?, in_b.?);
-                },
-                .Multiplication => {
-                    OpMultiplication.backward(current_node, in_a.?, in_b.?);
-                },
-                .TanH => {
-                    OpTanH.backward(current_node, in_a.?);
+                .Backward => {
+                    switch (current_node.op) {
+                        .Constant => {
+                            // do nothing, value should already be set.
+                        },
+                        .Addition => {
+                            OpAddition.backward(current_node, in_a.?, in_b.?);
+                        },
+                        .Subtraction => {
+                            OpSubtraction.backward(current_node, in_a.?, in_b.?);
+                        },
+                        .Multiplication => {
+                            OpMultiplication.backward(current_node, in_a.?, in_b.?);
+                        },
+                        .TanH => {
+                            OpTanH.backward(current_node, in_a.?);
+                        },
+                    }
                 },
             }
+
+            std.log.debug("DONE EVALUATING {s}, {?}", .{ current_node.name, current_node });
         }
     }
 
@@ -271,12 +252,10 @@ const DAG = struct {
             var current = stack.pop();
             if (visited.items[current]) continue;
             visited.items[current] = true;
-            std.debug.print("Visiting {s} ({})\n", .{ self.nodes.items[current].name, current });
 
             try sorted_nodes.append(current);
 
             for (self.edges.items) |edge| {
-                std.debug.print("Checking edge {?}\n", .{edge});
                 if (edge.to != current) {
                     continue;
                 }
@@ -396,14 +375,13 @@ pub fn main() !void {
     var sum = try graph.add(a, b);
     var c = try graph.constant(6);
     var sub = try graph.sub(sum, c);
-    try graph.resolveNode(sub);
+    try graph.resolveNode(sub, .Forward);
     std.debug.print("Value of sub node: {?}\n", .{graph.nodes.items[sub].value});
 
     // TODOs:
     // - Move backing data store to a Tensor
     // - Split out the ops from the resolve function...
     // - Get inspiration from ECS videos on how to get the handles..
-    // - actual Backprop
 
     // var device_cpu = TensorDeviceCPU.init(std.heap.page_allocator);
     // defer device_cpu.deinit();
@@ -441,7 +419,6 @@ pub fn main() !void {
     // x = self.dropout2(x)
     // x = self.fc2(x)
     // output = F.log_softmax(x, dim=1)
-
 }
 
 test "dag test forward/backward f = (1+2) - 6" {
@@ -457,7 +434,7 @@ test "dag test forward/backward f = (1+2) - 6" {
     var out_node_handle = sub;
 
     // Forward
-    try graph.resolveNode(out_node_handle);
+    try graph.resolveNode(out_node_handle, .Forward);
     try std.testing.expectEqual(graph.nodes.items[out_node_handle].value, -3.0);
 
     // Backward
@@ -491,11 +468,11 @@ test "dag test forward/backward f = tanh(2*(-3) + (0*1) + 6.7)" {
     var out_node_handle = tanh;
 
     // Forward
-    try graph.resolveNode(out_node_handle);
+    try graph.resolveNode(out_node_handle, .Forward);
     try std.testing.expectApproxEqAbs(graph.nodes.items[out_node_handle].value.?, 0.7071, 0.001);
 
     // Backward
-    try graph.resolveNodeBackward(out_node_handle);
+    try graph.resolveNode(out_node_handle, .Backward);
     try std.testing.expectApproxEqAbs(graph.nodes.items[c].grad, 0.5, 0.001);
     try std.testing.expectApproxEqAbs(graph.nodes.items[d].grad, 0.0, 0.001);
     try std.testing.expectApproxEqAbs(graph.nodes.items[a].grad, -1.5, 0.001);
