@@ -105,16 +105,16 @@ const DAG = struct {
 
     pub fn add(self: *Self, a: NodeHandle, b: NodeHandle) !NodeHandle {
         var handle: NodeHandle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "add", .op = .Addition, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "add", .op = OpAddition.interface, .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         try self.edges.append(DirectedEdge{ .from = b, .to = handle });
         return handle;
     }
 
     pub fn sub(self: *Self, a: NodeHandle, b: NodeHandle) !NodeHandle {
-        // TODO: This can reuse Mul and Add. add(self, mul(-1, other))
+        // TODO: This can be replaced by Mul and Add. add(self, mul(-1, other))
         var handle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "sub", .op = .Subtraction, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "sub", .op = OpSubtraction.interface, .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         try self.edges.append(DirectedEdge{ .from = b, .to = handle });
         return handle;
@@ -122,7 +122,7 @@ const DAG = struct {
 
     pub fn mul(self: *Self, a: NodeHandle, b: NodeHandle) !NodeHandle {
         var handle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "mul", .op = .Multiplication, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "mul", .op = OpMultiplication.interface, .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         try self.edges.append(DirectedEdge{ .from = b, .to = handle });
         return handle;
@@ -130,7 +130,7 @@ const DAG = struct {
 
     pub fn tanh(self: *Self, a: NodeHandle) !NodeHandle {
         var handle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "tanh", .op = .TanH, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "tanh", .op = OpTanH.interface, .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         return handle;
     }
@@ -138,7 +138,7 @@ const DAG = struct {
     const ResolveMode = enum { Forward, Backward };
 
     pub fn resolveNode(self: *Self, node_handle: NodeHandle, comptime mode: ResolveMode) !void {
-        // TODO: Can perhaps wreplace this with a call to ensureTopologicalOrder,
+        // TODO: Can perhaps replace this with a call to ensureTopologicalOrder,
         // that will resort the Nodes and how they are stored in mem?
         var sorted_nodes = try self.toposort_dfs(node_handle);
         defer sorted_nodes.deinit();
@@ -164,7 +164,7 @@ const DAG = struct {
 
             // Limit to 2 incoming edges to a given node.
             // TODO: Quicker lookup for incoming nodes?
-            // Pre-processing step to prepare a lookup table?
+            // TODO: Pre-processing step to prepare a lookup table?
             var in_a: ?*Node = null;
             var in_b: ?*Node = null;
             for (self.edges.items) |edge| {
@@ -181,49 +181,34 @@ const DAG = struct {
                 }
             }
 
-            // TODO: This check should not be performed for unary ops.
-            if (current_node.op != .Constant and current_node.op != .TanH and (in_a == null or in_b == null)) {
+            if ((current_node.op == .Unary and (in_a == null)) or
+                (current_node.op == .Binary and (in_a == null or in_b == null)))
+            {
                 std.debug.print("Not enough inputs to Op node {s}: {?}", .{ current_node.name, current_node });
                 assert(false); // Not enough inputs to op node.
             }
 
-            // TODO: Clean this up.
-            switch (mode) {
-                .Forward => {
-                    switch (current_node.op) {
-                        .Constant => {
-                            // do nothing, value should already be set.
+            switch (current_node.op) {
+                .Constant => {
+                    // do nothing
+                },
+                .Unary => |unary_op| {
+                    switch (mode) {
+                        .Forward => {
+                            unary_op.forward(current_node, @ptrCast(*const Node, in_a.?));
                         },
-                        .Addition => {
-                            OpAddition.forward(current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
-                        },
-                        .Subtraction => {
-                            OpSubtraction.forward(current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
-                        },
-                        .Multiplication => {
-                            OpMultiplication.forward(current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
-                        },
-                        .TanH => {
-                            OpTanH.forward(current_node, @ptrCast(*const Node, in_a.?));
+                        .Backward => {
+                            unary_op.backward(current_node, @ptrCast(*Node, in_a.?));
                         },
                     }
                 },
-                .Backward => {
-                    switch (current_node.op) {
-                        .Constant => {
-                            // do nothing, value should already be set.
+                .Binary => |binary_op| {
+                    switch (mode) {
+                        .Forward => {
+                            binary_op.forward(current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
                         },
-                        .Addition => {
-                            OpAddition.backward(current_node, in_a.?, in_b.?);
-                        },
-                        .Subtraction => {
-                            OpSubtraction.backward(current_node, in_a.?, in_b.?);
-                        },
-                        .Multiplication => {
-                            OpMultiplication.backward(current_node, in_a.?, in_b.?);
-                        },
-                        .TanH => {
-                            OpTanH.backward(current_node, in_a.?);
+                        .Backward => {
+                            binary_op.backward(current_node, @ptrCast(*Node, in_a.?), @ptrCast(*Node, in_b.?));
                         },
                     }
                 },
@@ -266,7 +251,6 @@ const DAG = struct {
         return sorted_nodes;
     }
 
-    const Op = enum { Constant, Addition, Subtraction, Multiplication, TanH };
     const NodeHandle = u64;
     const DirectedEdge = struct { from: NodeHandle, to: NodeHandle };
     const Node = struct {
@@ -276,6 +260,7 @@ const DAG = struct {
         grad: f32, // to be tensor?
     };
 
+    // TODO: Replace with Op below.
     const OpInterface = struct {
         // Limited to only 1 other value in
         forward: *const fn (*f32, *const f32) void,
@@ -292,9 +277,14 @@ const OpAddition = struct {
         in_a.grad += 1.0 * out.grad;
         in_b.grad += 1.0 * out.grad;
     }
+
+    const interface = Op{ .Binary = OpBinary{
+        .forward = &forward,
+        .backward = &backward,
+    } };
 };
 test "OpAddition forward/backward" {
-    var out = DAG.Node{ .name = "", .op = .Addition, .value = null, .grad = 0.5 };
+    var out = DAG.Node{ .name = "", .op = OpAddition.interface, .value = null, .grad = 0.5 };
     var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
     var in_b = DAG.Node{ .name = "", .op = .Constant, .value = 3.0, .grad = 0.0 };
     OpAddition.forward(&out, &in_a, &in_b);
@@ -315,9 +305,14 @@ const OpSubtraction = struct {
         in_a.grad += 1.0 * out.grad;
         in_b.grad += 1.0 * out.grad;
     }
+
+    const interface = Op{ .Binary = OpBinary{
+        .forward = forward,
+        .backward = backward,
+    } };
 };
 test "OpSubtraction forward/backward" {
-    var out = DAG.Node{ .name = "", .op = .Addition, .value = null, .grad = 0.5 };
+    var out = DAG.Node{ .name = "", .op = OpAddition.interface, .value = null, .grad = 0.5 };
     var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
     var in_b = DAG.Node{ .name = "", .op = .Constant, .value = 3.0, .grad = 0.0 };
     OpSubtraction.forward(&out, &in_a, &in_b);
@@ -338,9 +333,14 @@ const OpMultiplication = struct {
         in_a.grad += in_b.value.? * out.grad;
         in_b.grad += in_a.value.? * out.grad;
     }
+
+    const interface = Op{ .Binary = .{
+        .forward = forward,
+        .backward = backward,
+    } };
 };
 test "OpMultiplication forward/backward" {
-    var out = DAG.Node{ .name = "", .op = .Multiplication, .value = null, .grad = 1.0 };
+    var out = DAG.Node{ .name = "", .op = OpMultiplication.interface, .value = null, .grad = 1.0 };
     var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
     var in_b = DAG.Node{ .name = "", .op = .Constant, .value = 3.0, .grad = 0.0 };
     OpMultiplication.forward(&out, &in_a, &in_b);
@@ -362,6 +362,39 @@ const OpTanH = struct {
         const t = out.value.?;
         in_a.grad += (1.0 - t * t) * out.grad;
     }
+
+    const interface = Op{ .Unary = OpUnary{
+        .forward = forward,
+        .backward = backward,
+    } };
+};
+
+test "OpTanH forward/backward" {
+    var out = DAG.Node{ .name = "", .op = OpTanH.interface, .value = null, .grad = 1.0 };
+    var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
+
+    OpTanH.forward(&out, &in_a);
+    try std.testing.expectEqual(out.value, 0.9640275801);
+
+    OpTanH.backward(&out, &in_a);
+    try std.testing.expectEqual(out.grad, 1.0);
+    try std.testing.expectEqual(in_a.grad, 0.0706508159);
+}
+
+const OpUnary = struct {
+    forward: *const fn (out: *DAG.Node, in_a: *const DAG.Node) void,
+    backward: *const fn (out: *DAG.Node, in_a: *DAG.Node) void,
+};
+
+const OpBinary = struct {
+    forward: *const fn (out: *DAG.Node, in_a: *const DAG.Node, in_b: *const DAG.Node) void,
+    backward: *const fn (out: *DAG.Node, in_a: *DAG.Node, in_b: *DAG.Node) void,
+};
+
+const Op = union(enum) {
+    Constant,
+    Unary: OpUnary,
+    Binary: OpBinary,
 };
 
 pub fn main() !void {
