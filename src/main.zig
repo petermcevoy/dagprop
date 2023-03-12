@@ -62,6 +62,31 @@ const TensorDeviceCPU = struct {
         }
     }
 
+    fn tensorOpMultiplication(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
+        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
+        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
+        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
+        for (backing_tensor_a.elements) |_, i| {
+            backing_tensor_a.elements[i] *= backing_tensor_b.elements[i];
+        }
+    }
+
+    fn tensorOpDivision(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
+        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
+        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
+        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
+        for (backing_tensor_a.elements) |_, i| {
+            backing_tensor_a.elements[i] /= backing_tensor_b.elements[i];
+        }
+    }
+
+    fn tensorOpExp(self: *Self, tensor_a: Tensor) void {
+        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
+        for (backing_tensor_a.elements) |_, i| {
+            backing_tensor_a.elements[i] = std.math.exp(backing_tensor_a.elements[i]);
+        }
+    }
+
     fn tensorValues(self: *Self, tensor_a: Tensor) []f32 {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         return backing_tensor_a.elements;
@@ -518,4 +543,16 @@ test "tensor test" {
     device_cpu.tensorOpAddition(tensor_a, tensor_b);
     var values = device_cpu.tensorValues(tensor_a);
     try std.testing.expectEqual(values[0], 3.0);
+
+    device_cpu.tensorOpMultiplication(tensor_a, tensor_b);
+    values = device_cpu.tensorValues(tensor_a);
+    try std.testing.expectEqual(values[0], 6.0);
+
+    device_cpu.tensorOpDivision(tensor_a, tensor_b);
+    values = device_cpu.tensorValues(tensor_a);
+    try std.testing.expectEqual(values[0], 3.0);
+
+    device_cpu.tensorOpExp(tensor_a);
+    values = device_cpu.tensorValues(tensor_a);
+    try std.testing.expectEqual(values[0], 20.0855369);
 }
