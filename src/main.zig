@@ -105,7 +105,7 @@ const DAG = struct {
 
     pub fn add(self: *Self, a: NodeHandle, b: NodeHandle) !NodeHandle {
         var handle: NodeHandle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "add", .op = OpAddition.interface, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "add", .op = Op.from(OpAddition), .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         try self.edges.append(DirectedEdge{ .from = b, .to = handle });
         return handle;
@@ -114,7 +114,7 @@ const DAG = struct {
     pub fn sub(self: *Self, a: NodeHandle, b: NodeHandle) !NodeHandle {
         // TODO: This can be replaced by Mul and Add. add(self, mul(-1, other))
         var handle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "sub", .op = OpSubtraction.interface, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "sub", .op = Op.from(OpSubtraction), .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         try self.edges.append(DirectedEdge{ .from = b, .to = handle });
         return handle;
@@ -122,7 +122,7 @@ const DAG = struct {
 
     pub fn mul(self: *Self, a: NodeHandle, b: NodeHandle) !NodeHandle {
         var handle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "mul", .op = OpMultiplication.interface, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "mul", .op = Op.from(OpMultiplication), .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         try self.edges.append(DirectedEdge{ .from = b, .to = handle });
         return handle;
@@ -130,7 +130,7 @@ const DAG = struct {
 
     pub fn tanh(self: *Self, a: NodeHandle) !NodeHandle {
         var handle = self.nodes.items.len;
-        try self.nodes.append(Node{ .name = "tanh", .op = OpTanH.interface, .value = null, .grad = 0.0 });
+        try self.nodes.append(Node{ .name = "tanh", .op = Op.from(OpTanH), .value = null, .grad = 0.0 });
         try self.edges.append(DirectedEdge{ .from = a, .to = handle });
         return handle;
     }
@@ -259,13 +259,6 @@ const DAG = struct {
         value: ?f32, // to be tensor?
         grad: f32, // to be tensor?
     };
-
-    // TODO: Replace with Op below.
-    const OpInterface = struct {
-        // Limited to only 1 other value in
-        forward: *const fn (*f32, *const f32) void,
-        backward: *const fn (*f32, *const f32) void,
-    };
 };
 
 const OpAddition = struct {
@@ -277,14 +270,9 @@ const OpAddition = struct {
         in_a.grad += 1.0 * out.grad;
         in_b.grad += 1.0 * out.grad;
     }
-
-    const interface = Op{ .Binary = OpBinary{
-        .forward = &forward,
-        .backward = &backward,
-    } };
 };
 test "OpAddition forward/backward" {
-    var out = DAG.Node{ .name = "", .op = OpAddition.interface, .value = null, .grad = 0.5 };
+    var out = DAG.Node{ .name = "", .op = Op.from(OpAddition), .value = null, .grad = 0.5 };
     var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
     var in_b = DAG.Node{ .name = "", .op = .Constant, .value = 3.0, .grad = 0.0 };
     OpAddition.forward(&out, &in_a, &in_b);
@@ -305,14 +293,9 @@ const OpSubtraction = struct {
         in_a.grad += 1.0 * out.grad;
         in_b.grad += 1.0 * out.grad;
     }
-
-    const interface = Op{ .Binary = OpBinary{
-        .forward = forward,
-        .backward = backward,
-    } };
 };
 test "OpSubtraction forward/backward" {
-    var out = DAG.Node{ .name = "", .op = OpAddition.interface, .value = null, .grad = 0.5 };
+    var out = DAG.Node{ .name = "", .op = Op.from(OpAddition), .value = null, .grad = 0.5 };
     var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
     var in_b = DAG.Node{ .name = "", .op = .Constant, .value = 3.0, .grad = 0.0 };
     OpSubtraction.forward(&out, &in_a, &in_b);
@@ -333,14 +316,9 @@ const OpMultiplication = struct {
         in_a.grad += in_b.value.? * out.grad;
         in_b.grad += in_a.value.? * out.grad;
     }
-
-    const interface = Op{ .Binary = .{
-        .forward = forward,
-        .backward = backward,
-    } };
 };
 test "OpMultiplication forward/backward" {
-    var out = DAG.Node{ .name = "", .op = OpMultiplication.interface, .value = null, .grad = 1.0 };
+    var out = DAG.Node{ .name = "", .op = Op.from(OpMultiplication), .value = null, .grad = 1.0 };
     var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
     var in_b = DAG.Node{ .name = "", .op = .Constant, .value = 3.0, .grad = 0.0 };
     OpMultiplication.forward(&out, &in_a, &in_b);
@@ -362,15 +340,10 @@ const OpTanH = struct {
         const t = out.value.?;
         in_a.grad += (1.0 - t * t) * out.grad;
     }
-
-    const interface = Op{ .Unary = OpUnary{
-        .forward = forward,
-        .backward = backward,
-    } };
 };
 
 test "OpTanH forward/backward" {
-    var out = DAG.Node{ .name = "", .op = OpTanH.interface, .value = null, .grad = 1.0 };
+    var out = DAG.Node{ .name = "", .op = Op.from(OpTanH), .value = null, .grad = 1.0 };
     var in_a = DAG.Node{ .name = "", .op = .Constant, .value = 2.0, .grad = 0.0 };
 
     OpTanH.forward(&out, &in_a);
@@ -395,6 +368,22 @@ const Op = union(enum) {
     Constant,
     Unary: OpUnary,
     Binary: OpBinary,
+
+    pub fn from(T: anytype) Op {
+        const has_unary_forward = @TypeOf(T.forward) == fn (out: *DAG.Node, in_a: *const DAG.Node) void;
+        const has_unary_backward = @TypeOf(T.backward) == fn (out: *DAG.Node, in_a: *DAG.Node) void;
+        const has_binary_forward = @TypeOf(T.forward) == fn (out: *DAG.Node, in_a: *const DAG.Node, *const DAG.Node) void;
+        const has_binary_backward = @TypeOf(T.backward) == fn (out: *DAG.Node, in_a: *DAG.Node, in_b: *DAG.Node) void;
+        const is_unary = has_unary_forward and has_unary_backward;
+        const is_binary = has_binary_forward and has_binary_backward;
+
+        if (is_unary == is_binary) {
+            @compileError("Type has incorrect forward/backward functions for it to be an Op: " ++ @typeName(T));
+        }
+
+        if (is_unary) return Op{ .Unary = OpUnary{ .forward = T.forward, .backward = T.backward } };
+        if (is_binary) return Op{ .Binary = OpBinary{ .forward = T.forward, .backward = T.backward } };
+    }
 };
 
 pub fn main() !void {
