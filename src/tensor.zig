@@ -80,7 +80,7 @@ pub const TensorDeviceCPU = struct {
         @memset(backing_tensor_dst.elements, value);
     }
 
-    /// a += b
+    /// a += b (element-wise)
     pub fn tensorOpAddition(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
@@ -90,7 +90,7 @@ pub const TensorDeviceCPU = struct {
         }
     }
 
-    /// a -= b
+    /// a -= b (element-wise)
     pub fn tensorOpSubtraction(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
@@ -100,7 +100,7 @@ pub const TensorDeviceCPU = struct {
         }
     }
 
-    /// a *= b
+    /// a *= b (element-wise)
     pub fn tensorOpMultiplication(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
@@ -110,7 +110,7 @@ pub const TensorDeviceCPU = struct {
         }
     }
 
-    /// a += b * c
+    /// a += b * c (element-wise)
     pub fn tensorOpMultiplicationAccumulation(self: *Self, tensor_a: Tensor, tensor_b: Tensor, tensor_c: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
@@ -122,7 +122,7 @@ pub const TensorDeviceCPU = struct {
         }
     }
 
-    /// a /= b
+    /// a /= b (element-wise)
     pub fn tensorOpDivision(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];

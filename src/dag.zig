@@ -22,7 +22,7 @@ const Node = struct { // Move node back into DAG?
     grad: Tensor,
 };
 
-pub const DAG = struct {
+pub const Dag = struct {
     const Self = @This();
     nodes: ArrayList(Node),
     edges: ArrayList(DirectedEdge),
@@ -372,7 +372,7 @@ test "dag test forward/backward f = (1+2) - 6" {
     var tensor_dev = TensorDevice.init(std.testing.allocator);
     defer tensor_dev.deinit();
 
-    var graph = DAG.init(std.testing.allocator, &tensor_dev);
+    var graph = Dag.init(std.testing.allocator, &tensor_dev);
     defer graph.deinit();
 
     // f = (1+2) - 6
@@ -388,9 +388,14 @@ test "dag test forward/backward f = (1+2) - 6" {
     try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[out_node_handle].value.?, &.{0}), -3.0);
 
     // Backward
-    // try graph.resolveNodeBackward(out_node_handle);
+    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[c].grad, &.{0}), 0.0);
+    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[b].grad, &.{0}), 0.0);
+    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[a].grad, &.{0}), 0.0);
+    try graph.resolveNode(out_node_handle, .Backward);
+    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[c].grad, &.{0}), 1.0);
+    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[b].grad, &.{0}), 1.0);
+    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[a].grad, &.{0}), 1.0);
 
-    // MPS does it like this:
     // torch does it like this:
     //  logit1 = torch.Tensor([1.0]).double() ; logit4.requires_grad = True
     //  ...
@@ -404,7 +409,7 @@ test "dag test forward/backward f = tanh(2*(-3) + (0*1) + 6.7)" {
     var tensor_dev = TensorDevice.init(std.testing.allocator);
     defer tensor_dev.deinit();
 
-    var graph = DAG.init(std.testing.allocator, &tensor_dev);
+    var graph = Dag.init(std.testing.allocator, &tensor_dev);
     defer graph.deinit();
 
     // f = tanh(2*(-3) + (0*1) + 6.7)
