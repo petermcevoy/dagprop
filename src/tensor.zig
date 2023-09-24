@@ -17,6 +17,8 @@ pub const Tensor = struct {
     handle: usize,
 };
 
+// Naive CPU implementation of a tensor backend.
+// TODO: Consider also doing a SIMD, BLAS or CUDA version to compare against
 pub const TensorDeviceCPU = struct {
     const Self = @This();
 
