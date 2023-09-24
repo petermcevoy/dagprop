@@ -154,20 +154,20 @@ const DAG = struct {
                 .Unary => |unary_op| {
                     switch (mode) {
                         .Forward => {
-                            unary_op.forward(self.tensor_device, current_node, @ptrCast(*const Node, in_a.?));
+                            unary_op.forward(self.tensor_device, current_node, in_a.?);
                         },
                         .Backward => {
-                            unary_op.backward(self.tensor_device, current_node, @ptrCast(*Node, in_a.?));
+                            unary_op.backward(self.tensor_device, current_node, in_a.?);
                         },
                     }
                 },
                 .Binary => |binary_op| {
                     switch (mode) {
                         .Forward => {
-                            binary_op.forward(self.tensor_device, current_node, @ptrCast(*const Node, in_a.?), @ptrCast(*const Node, in_b.?));
+                            binary_op.forward(self.tensor_device, current_node, in_a.?, in_b.?);
                         },
                         .Backward => {
-                            binary_op.backward(self.tensor_device, current_node, @ptrCast(*Node, in_a.?), @ptrCast(*Node, in_b.?));
+                            binary_op.backward(self.tensor_device, current_node, in_a.?, in_b.?);
                         },
                     }
                 },
@@ -351,9 +351,10 @@ const Op = union(enum) {
         const is_unary = has_unary_forward and has_unary_backward;
         const is_binary = has_binary_forward and has_binary_backward;
 
-        if (is_unary == is_binary) {
+        if (is_unary == false and is_binary == false) {
             @compileError("Type has incorrect forward/backward functions for it to be an Op: " ++ @typeName(T));
         }
+        assert((is_unary == true and is_binary == false) or (is_unary == false and is_binary == true)); // Mutually exclusive
 
         if (is_unary) return Op{ .Unary = OpUnary{ .forward = T.forward, .backward = T.backward } };
         if (is_binary) return Op{ .Binary = OpBinary{ .forward = T.forward, .backward = T.backward } };
