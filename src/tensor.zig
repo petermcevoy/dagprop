@@ -17,8 +17,8 @@ pub const Tensor = struct {
     handle: usize,
 };
 
-// Naive CPU implementation of a tensor backend.
 // TODO: Consider also doing a SIMD, BLAS or CUDA version to compare against
+/// Naive CPU implementation of a tensor backend.
 pub const TensorDeviceCPU = struct {
     const Self = @This();
 
@@ -48,7 +48,7 @@ pub const TensorDeviceCPU = struct {
         }
 
         var elements = try self.allocator.alloc(f32, num_elements);
-        std.mem.set(f32, elements, 0.0);
+        @memset(elements, 0.0);
         var new_tensor_handle = self.backing_tensors.items.len;
         try self.backing_tensors.append(TensorCPU{ .elements = elements });
         return Tensor{ .handle = new_tensor_handle, .descriptor = desc };
@@ -77,72 +77,80 @@ pub const TensorDeviceCPU = struct {
 
     pub fn tensorOpSetScalar(self: *Self, tensor_dst: Tensor, value: f32) void {
         var backing_tensor_dst = self.backing_tensors.items[tensor_dst.handle];
-        std.mem.set(f32, backing_tensor_dst.elements, value);
+        @memset(backing_tensor_dst.elements, value);
     }
 
+    /// a += b
     pub fn tensorOpAddition(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             backing_tensor_a.elements[i] += backing_tensor_b.elements[i];
         }
     }
 
+    /// a -= b
     pub fn tensorOpSubtraction(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             backing_tensor_a.elements[i] -= backing_tensor_b.elements[i];
         }
     }
 
+    /// a *= b
     pub fn tensorOpMultiplication(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             backing_tensor_a.elements[i] *= backing_tensor_b.elements[i];
         }
     }
 
+    /// a += b * c
     pub fn tensorOpMultiplicationAccumulation(self: *Self, tensor_a: Tensor, tensor_b: Tensor, tensor_c: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
         var backing_tensor_c = self.backing_tensors.items[tensor_c.handle];
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_c.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             backing_tensor_a.elements[i] += backing_tensor_b.elements[i] * backing_tensor_c.elements[i];
         }
     }
 
+    /// a /= b
     pub fn tensorOpDivision(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             backing_tensor_a.elements[i] /= backing_tensor_b.elements[i];
         }
     }
 
+    /// a = exp(a)
     pub fn tensorOpExp(self: *Self, tensor_a: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             backing_tensor_a.elements[i] = std.math.exp(backing_tensor_a.elements[i]);
         }
     }
 
+    /// a = tanh(a)
     pub fn tensorOpTanh(self: *Self, tensor_a: Tensor) void {
         // TODO: Can be constructed from constituent ops?
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             const v = backing_tensor_a.elements[i];
             backing_tensor_a.elements[i] = (std.math.exp(2.0 * v) - 1) / (std.math.exp(2.0 * v) + 1);
         }
     }
 
+    /// a += (1- b*b) * c
     pub fn tensorOpTanhBackward(self: *Self, tensor_a: Tensor, tensor_b: Tensor, tensor_c: Tensor) void {
         // TODO: Can be constructed from constituent ops?
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
@@ -150,7 +158,7 @@ pub const TensorDeviceCPU = struct {
         var backing_tensor_c = self.backing_tensors.items[tensor_c.handle];
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
         assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_c.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
+        for (backing_tensor_a.elements, 0..) |_, i| {
             const t = backing_tensor_b.elements[i];
             backing_tensor_a.elements[i] += (1.0 - t * t) * backing_tensor_c.elements[i];
         }
@@ -171,7 +179,7 @@ pub const TensorDeviceCPU = struct {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         var actual_index: usize = 0;
         var stride: usize = 1;
-        for (index) |_, i| {
+        for (index, 0..) |_, i| {
             var i_reversed = index.len - i - 1;
             var index_el = index[i_reversed];
             actual_index += index_el * stride;

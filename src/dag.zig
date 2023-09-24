@@ -14,6 +14,7 @@ const TensorDevice = blk: {
     }
 };
 
+/// Doc comment test about Node.
 const Node = struct { // Move node back into DAG?
     name: []const u8,
     op: Op,
@@ -42,7 +43,7 @@ pub const DAG = struct {
         self.edges.deinit();
     }
 
-    fn addNode(self: *Self, name: []const u8, op: Op, value: ?Tensor, inputs: []NodeHandle) !NodeHandle {
+    fn addNode(self: *Self, name: []const u8, op: Op, value: ?Tensor, inputs: []const NodeHandle) !NodeHandle {
         var handle: NodeHandle = self.nodes.items.len;
 
         var tensor_value: Tensor = undefined;
@@ -87,7 +88,7 @@ pub const DAG = struct {
     }
 
     pub fn constant(self: *Self, value: Tensor) !NodeHandle {
-        return try self.addNode("constant", .Constant, value, &[0]NodeHandle{});
+        return try self.addNode("constant", .Constant, value, &.{});
     }
 
     pub fn add(self: *Self, a: NodeHandle, b: NodeHandle) !NodeHandle {
@@ -223,7 +224,7 @@ pub const DAG = struct {
         return sorted_nodes;
     }
 
-    const NodeHandle = u64;
+    const NodeHandle = usize;
     const DirectedEdge = struct { from: NodeHandle, to: NodeHandle };
 };
 
