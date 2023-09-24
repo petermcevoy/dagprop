@@ -3,171 +3,10 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
-fn productOfElements(elements: []const usize) usize {
-    var product: usize = 1;
-    for (elements) |element| {
-        product *= element;
-    }
-    return product;
-}
-
-const TensorDeviceCPU = struct {
-    const Self = @This();
-
-    const TensorCPU = struct {
-        elements: []f32,
-    };
-
-    allocator: Allocator,
-    backing_tensors: ArrayList(TensorCPU),
-
-    fn init(allocator: Allocator) Self {
-        return Self{ .allocator = allocator, .backing_tensors = ArrayList(TensorCPU).init(allocator) };
-    }
-
-    fn deinit(self: *Self) void {
-        for (self.backing_tensors.items) |tensor| {
-            self.allocator.free(tensor.elements);
-        }
-        self.backing_tensors.deinit();
-    }
-
-    fn createTensor(self: *Self, desc: TensorDescriptor) !Tensor {
-        var num_elements: usize = 1;
-        for (desc.dimensions_sizes) |dim| {
-            assert(dim > 0); // Tensor dimension sizes must be > 0
-            num_elements *= dim;
-        }
-
-        var elements = try self.allocator.alloc(f32, num_elements);
-        std.mem.set(f32, elements, 0.0);
-        var new_tensor_handle = self.backing_tensors.items.len;
-        try self.backing_tensors.append(TensorCPU{ .elements = elements });
-        return Tensor{ .handle = new_tensor_handle, .descriptor = desc };
-    }
-
-    fn createTensorScalar(self: *Self, value: f32) !Tensor {
-        var tensor = try self.createTensor(TensorDescriptor{
-            .dimensions_sizes = &[_]usize{1},
-        });
-        self.setTensorData(tensor, &[_]f32{value});
-        return tensor;
-    }
-
-    fn setTensorData(self: *Self, tensor: Tensor, data: []const f32) void {
-        var backing_tensor = self.backing_tensors.items[tensor.handle];
-        assert(productOfElements(tensor.descriptor.dimensions_sizes) == data.len);
-        std.mem.copy(f32, backing_tensor.elements, data);
-    }
-
-    fn tensorOpSet(self: *Self, tensor_dst: Tensor, tensor_src: Tensor) void {
-        var backing_tensor_dst = self.backing_tensors.items[tensor_dst.handle];
-        var backing_tensor_src = self.backing_tensors.items[tensor_src.handle];
-        assert(std.mem.eql(usize, tensor_dst.descriptor.dimensions_sizes, tensor_src.descriptor.dimensions_sizes));
-        std.mem.copy(f32, backing_tensor_dst.elements, backing_tensor_src.elements);
-    }
-
-    fn tensorOpSetScalar(self: *Self, tensor_dst: Tensor, value: f32) void {
-        var backing_tensor_dst = self.backing_tensors.items[tensor_dst.handle];
-        std.mem.set(f32, backing_tensor_dst.elements, value);
-    }
-
-    fn tensorOpAddition(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
-            backing_tensor_a.elements[i] += backing_tensor_b.elements[i];
-        }
-    }
-
-    fn tensorOpSubtraction(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
-            backing_tensor_a.elements[i] -= backing_tensor_b.elements[i];
-        }
-    }
-
-    fn tensorOpMultiplication(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
-            backing_tensor_a.elements[i] *= backing_tensor_b.elements[i];
-        }
-    }
-
-    fn tensorOpMultiplicationAccumulation(self: *Self, tensor_a: Tensor, tensor_b: Tensor, tensor_c: Tensor) void {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
-        var backing_tensor_c = self.backing_tensors.items[tensor_c.handle];
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_c.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
-            backing_tensor_a.elements[i] += backing_tensor_b.elements[i] * backing_tensor_c.elements[i];
-        }
-    }
-
-    fn tensorOpDivision(self: *Self, tensor_a: Tensor, tensor_b: Tensor) void {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
-            backing_tensor_a.elements[i] /= backing_tensor_b.elements[i];
-        }
-    }
-
-    fn tensorOpExp(self: *Self, tensor_a: Tensor) void {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        for (backing_tensor_a.elements) |_, i| {
-            backing_tensor_a.elements[i] = std.math.exp(backing_tensor_a.elements[i]);
-        }
-    }
-
-    fn tensorOpTanh(self: *Self, tensor_a: Tensor) void { // TODO: more generic way to do this?
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        for (backing_tensor_a.elements) |_, i| {
-            const v = backing_tensor_a.elements[i];
-            backing_tensor_a.elements[i] = (std.math.exp(2.0 * v) - 1) / (std.math.exp(2.0 * v) + 1);
-        }
-    }
-
-    fn tensorOpTanhBackward(self: *Self, tensor_a: Tensor, tensor_b: Tensor, tensor_c: Tensor) void { // TODO: more generic way to do this?
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        var backing_tensor_b = self.backing_tensors.items[tensor_b.handle];
-        var backing_tensor_c = self.backing_tensors.items[tensor_c.handle];
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_b.descriptor.dimensions_sizes));
-        assert(std.mem.eql(usize, tensor_a.descriptor.dimensions_sizes, tensor_c.descriptor.dimensions_sizes));
-        for (backing_tensor_a.elements) |_, i| {
-            const t = backing_tensor_b.elements[i];
-            backing_tensor_a.elements[i] += (1.0 - t * t) * backing_tensor_c.elements[i];
-        }
-    }
-
-    fn tensorValues(self: *Self, tensor_a: Tensor) []f32 {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        return backing_tensor_a.elements;
-    }
-
-    fn tensorValue(self: *Self, tensor_a: Tensor, index: usize) f32 {
-        var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
-        return backing_tensor_a.elements[index];
-    }
-};
-
-// TODO: Support more device backbends, simd, Metal performance shaders, cuda?
-const TensorDevice = TensorDeviceCPU;
-
-const TensorDescriptor = struct {
-    dimensions_sizes: []const usize,
-    // data_type: ,
-};
-const Tensor = struct {
-    descriptor: TensorDescriptor,
-    handle: usize,
-};
+const tensor = @import("tensor.zig");
+const Tensor = tensor.Tensor;
+const TensorDescriptor = tensor.TensorDescriptor;
+const TensorDevice = tensor.TensorDeviceCPU;
 
 const DAG = struct {
     const Self = @This();
@@ -375,7 +214,7 @@ const DAG = struct {
     const DirectedEdge = struct { from: NodeHandle, to: NodeHandle };
 };
 
-const Node = struct {
+const Node = struct { // Move node back into DAG?
     name: []const u8,
     op: Op,
     value: ?Tensor,
@@ -401,12 +240,12 @@ test "OpAddition forward/backward" {
     var in_a = Node{ .name = "", .op = .Constant, .value = try dev.createTensorScalar(2.0), .grad = try dev.createTensorScalar(0.0) };
     var in_b = Node{ .name = "", .op = .Constant, .value = try dev.createTensorScalar(3.0), .grad = try dev.createTensorScalar(0.0) };
     OpAddition.forward(&dev, &out, &in_a, &in_b);
-    try std.testing.expectEqual(dev.tensorValue(out.value.?, 0), 5.0);
+    try std.testing.expectEqual(dev.tensorValue(out.value.?, &.{0}), 5.0);
 
     OpAddition.backward(&dev, &out, &in_a, &in_b);
-    try std.testing.expectEqual(dev.tensorValue(out.grad, 0), 0.5);
-    try std.testing.expectEqual(dev.tensorValue(in_a.grad, 0), 0.5);
-    try std.testing.expectEqual(dev.tensorValue(in_b.grad, 0), 0.5);
+    try std.testing.expectEqual(dev.tensorValue(out.grad, &.{0}), 0.5);
+    try std.testing.expectEqual(dev.tensorValue(in_a.grad, &.{0}), 0.5);
+    try std.testing.expectEqual(dev.tensorValue(in_b.grad, &.{0}), 0.5);
 }
 
 const OpSubtraction = struct {
@@ -421,19 +260,19 @@ const OpSubtraction = struct {
     }
 };
 test "OpSubtraction forward/backward" {
-    var dev = TensorDeviceCPU.init(std.testing.allocator);
+    var dev = TensorDevice.init(std.testing.allocator);
     defer dev.deinit();
 
     var out = Node{ .name = "", .op = Op.from(OpAddition), .value = try dev.createTensorScalar(0.0), .grad = try dev.createTensorScalar(0.5) };
     var in_a = Node{ .name = "", .op = .Constant, .value = try dev.createTensorScalar(2.0), .grad = try dev.createTensorScalar(0.0) };
     var in_b = Node{ .name = "", .op = .Constant, .value = try dev.createTensorScalar(3.0), .grad = try dev.createTensorScalar(0.0) };
     OpSubtraction.forward(&dev, &out, &in_a, &in_b);
-    try std.testing.expectEqual(dev.tensorValue(out.value.?, 0), -1.0);
+    try std.testing.expectEqual(dev.tensorValue(out.value.?, &.{0}), -1.0);
 
     OpSubtraction.backward(&dev, &out, &in_a, &in_b);
-    try std.testing.expectEqual(dev.tensorValue(out.grad, 0), 0.5);
-    try std.testing.expectEqual(dev.tensorValue(in_a.grad, 0), 0.5);
-    try std.testing.expectEqual(dev.tensorValue(in_b.grad, 0), 0.5);
+    try std.testing.expectEqual(dev.tensorValue(out.grad, &.{0}), 0.5);
+    try std.testing.expectEqual(dev.tensorValue(in_a.grad, &.{0}), 0.5);
+    try std.testing.expectEqual(dev.tensorValue(in_b.grad, &.{0}), 0.5);
 }
 
 const OpMultiplication = struct {
@@ -448,19 +287,19 @@ const OpMultiplication = struct {
     }
 };
 test "OpMultiplication forward/backward" {
-    var dev = TensorDeviceCPU.init(std.testing.allocator);
+    var dev = TensorDevice.init(std.testing.allocator);
     defer dev.deinit();
 
     var out = Node{ .name = "", .op = Op.from(OpMultiplication), .value = try dev.createTensorScalar(0.0), .grad = try dev.createTensorScalar(1.0) };
     var in_a = Node{ .name = "", .op = .Constant, .value = try dev.createTensorScalar(2.0), .grad = try dev.createTensorScalar(0.0) };
     var in_b = Node{ .name = "", .op = .Constant, .value = try dev.createTensorScalar(3.0), .grad = try dev.createTensorScalar(0.0) };
     OpMultiplication.forward(&dev, &out, &in_a, &in_b);
-    try std.testing.expectEqual(dev.tensorValue(out.value.?, 0), 6.0);
+    try std.testing.expectEqual(dev.tensorValue(out.value.?, &.{0}), 6.0);
 
     OpMultiplication.backward(&dev, &out, &in_a, &in_b);
-    try std.testing.expectEqual(dev.tensorValue(out.grad, 0), 1.0);
-    try std.testing.expectEqual(dev.tensorValue(in_a.grad, 0), 3.0);
-    try std.testing.expectEqual(dev.tensorValue(in_b.grad, 0), 2.0);
+    try std.testing.expectEqual(dev.tensorValue(out.grad, &.{0}), 1.0);
+    try std.testing.expectEqual(dev.tensorValue(in_a.grad, &.{0}), 3.0);
+    try std.testing.expectEqual(dev.tensorValue(in_b.grad, &.{0}), 2.0);
 }
 
 const OpTanH = struct {
@@ -475,18 +314,18 @@ const OpTanH = struct {
 };
 
 test "OpTanH forward/backward" {
-    var dev = TensorDeviceCPU.init(std.testing.allocator);
+    var dev = TensorDevice.init(std.testing.allocator);
     defer dev.deinit();
 
     var out = Node{ .name = "", .op = Op.from(OpTanH), .value = try dev.createTensorScalar(0.0), .grad = try dev.createTensorScalar(1.0) };
     var in_a = Node{ .name = "", .op = .Constant, .value = try dev.createTensorScalar(2.0), .grad = try dev.createTensorScalar(0.0) };
 
     OpTanH.forward(&dev, &out, &in_a);
-    try std.testing.expectEqual(dev.tensorValue(out.value.?, 0), 0.9640275801);
+    try std.testing.expectEqual(dev.tensorValue(out.value.?, &.{0}), 0.9640275801);
 
     OpTanH.backward(&dev, &out, &in_a);
-    try std.testing.expectEqual(dev.tensorValue(out.grad, 0), 1.0);
-    try std.testing.expectEqual(dev.tensorValue(in_a.grad, 0), 0.0706508159);
+    try std.testing.expectEqual(dev.tensorValue(out.grad, &.{0}), 1.0);
+    try std.testing.expectEqual(dev.tensorValue(in_a.grad, &.{0}), 0.0706508159);
 }
 
 const OpUnary = struct {
@@ -591,7 +430,7 @@ test "dag test forward/backward f = (1+2) - 6" {
 
     // Forward
     try graph.resolveNode(out_node_handle, .Forward);
-    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[out_node_handle].value.?, 0), -3.0);
+    try std.testing.expectEqual(tensor_dev.tensorValue(graph.nodes.items[out_node_handle].value.?, &.{0}), -3.0);
 
     // Backward
     // try graph.resolveNodeBackward(out_node_handle);
@@ -628,43 +467,12 @@ test "dag test forward/backward f = tanh(2*(-3) + (0*1) + 6.7)" {
 
     // Forward
     try graph.resolveNode(out_node_handle, .Forward);
-    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[out_node_handle].value.?, 0), 0.7071, 0.001);
+    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[out_node_handle].value.?, &.{0}), 0.7071, 0.001);
 
     // Backward
     try graph.resolveNode(out_node_handle, .Backward);
-    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[c].grad, 0), 0.5, 0.001);
-    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[d].grad, 0), 0.0, 0.001);
-    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[a].grad, 0), -1.5, 0.001);
-    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[b].grad, 0), 1.0, 0.001);
-}
-
-test "tensor test" {
-    var device_cpu = TensorDevice.init(std.testing.allocator);
-    defer device_cpu.deinit();
-
-    var tensor_a = try device_cpu.createTensor(TensorDescriptor{
-        .dimensions_sizes = &[_]usize{ 1, 1 },
-    });
-    device_cpu.setTensorData(tensor_a, &[_]f32{1.0});
-
-    var tensor_b = try device_cpu.createTensor(TensorDescriptor{
-        .dimensions_sizes = &[_]usize{ 1, 1 },
-    });
-    device_cpu.setTensorData(tensor_b, &[_]f32{2.0});
-
-    device_cpu.tensorOpAddition(tensor_a, tensor_b);
-    var values = device_cpu.tensorValues(tensor_a);
-    try std.testing.expectEqual(values[0], 3.0);
-
-    device_cpu.tensorOpMultiplication(tensor_a, tensor_b);
-    values = device_cpu.tensorValues(tensor_a);
-    try std.testing.expectEqual(values[0], 6.0);
-
-    device_cpu.tensorOpDivision(tensor_a, tensor_b);
-    values = device_cpu.tensorValues(tensor_a);
-    try std.testing.expectEqual(values[0], 3.0);
-
-    device_cpu.tensorOpExp(tensor_a);
-    values = device_cpu.tensorValues(tensor_a);
-    try std.testing.expectEqual(values[0], 20.0855369);
+    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[c].grad, &.{0}), 0.5, 0.001);
+    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[d].grad, &.{0}), 0.0, 0.001);
+    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[a].grad, &.{0}), -1.5, 0.001);
+    try std.testing.expectApproxEqAbs(tensor_dev.tensorValue(graph.nodes.items[b].grad, &.{0}), 1.0, 0.001);
 }
