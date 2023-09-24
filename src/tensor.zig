@@ -132,7 +132,7 @@ pub const TensorDeviceCPU = struct {
         }
     }
 
-    /// a = exp(a)
+    /// a = exp(a) (element-wise)
     pub fn tensorOpExp(self: *Self, tensor_a: Tensor) void {
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
         for (backing_tensor_a.elements, 0..) |_, i| {
@@ -140,7 +140,7 @@ pub const TensorDeviceCPU = struct {
         }
     }
 
-    /// a = tanh(a)
+    /// a = tanh(a) (element-wise)
     pub fn tensorOpTanh(self: *Self, tensor_a: Tensor) void {
         // TODO: Can be constructed from constituent ops?
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];
@@ -150,7 +150,7 @@ pub const TensorDeviceCPU = struct {
         }
     }
 
-    /// a += (1- b*b) * c
+    /// a += (1- b*b) * (element-wise)
     pub fn tensorOpTanhBackward(self: *Self, tensor_a: Tensor, tensor_b: Tensor, tensor_c: Tensor) void {
         // TODO: Can be constructed from constituent ops?
         var backing_tensor_a = self.backing_tensors.items[tensor_a.handle];

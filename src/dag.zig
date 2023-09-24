@@ -14,8 +14,7 @@ const TensorDevice = blk: {
     }
 };
 
-/// Doc comment test about Node.
-const Node = struct { // Move node back into DAG?
+const Node = struct {
     name: []const u8,
     op: Op,
     value: ?Tensor, // TODO: Remove optional?
