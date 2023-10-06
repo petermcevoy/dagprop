@@ -1,15 +1,24 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
-const assert = std.debug.assert;
 
-const tensor = @import("tensor.zig");
+const dagprop = @import("dagprop");
+const tensor = dagprop.tensor;
 pub const TensorDevice = tensor.TensorDeviceCPU;
 
-const dag = @import("dag.zig");
-const Dag = dag.Dag;
+const Dag = dagprop.Dag;
+const Mlp = dagprop.Mlp;
 
 pub fn main() !void {
+
+    // Input layer 3
+    // Hidden layer 3 + bias
+    // output layer 1
+    //
+    // Inputs  = [[0,0], [0,1], [1,0], [1,1]]
+    // Outputs = [[0], [1], [1], [0]]
+    //
+    // MLP, dense
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -17,6 +26,15 @@ pub fn main() !void {
     var tensor_dev = TensorDevice.init(allocator); // Hide tensor_dev from here and only have it within DAG?
 
     var graph = Dag.init(allocator, &tensor_dev);
+
+    var mlp = Mlp.init(allocator, &graph);
+
+    // Add hidden layer with 2 neurons and two inputs
+    mlp.add(.Dense, 2, 2);
+
+    // Add output layer
+    mlp.add(.Dense, 1);
+
     var a = try graph.constant(try tensor_dev.createTensorScalar(1));
     var b = try graph.constant(try tensor_dev.createTensorScalar(2));
     var sum = try graph.add(a, b);

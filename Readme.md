@@ -5,7 +5,7 @@ The graph can be evaluated in a forward pass to give a result and also in a back
 backpropagation of gradients.
 
 ```bash
-$ zig build -Doptimize=ReleaseSafe run
+$ zig build -Doptimize=ReleaseSafe example_simple
 info: Performing forward pass in DAG
 Value of sub node is: 1.8e+01
 info: Performing backward pass in DAG
